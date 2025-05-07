@@ -29,7 +29,14 @@ MAX_MESSAGE_NODES = 100
 
 def get_config(filename="config.yaml"):
     with open(filename, "r") as file:
-        return yaml.safe_load(file)
+        config = yaml.safe_load(file)
+
+    # Load system prompt from a markdown file if specified
+    if "system_prompt_file" in config:
+        with open(config["system_prompt_file"], "r", encoding="utf-8") as prompt_file:
+            config["system_prompt"] = prompt_file.read()
+
+    return config
 
 
 cfg = get_config()
@@ -215,6 +222,7 @@ async def on_message(new_msg):
     try:
         async with new_msg.channel.typing():
             async for curr_chunk in await openai_client.chat.completions.create(**kwargs):
+                logging.debug(f"API Request Parameters: {kwargs}")
                 if finish_reason != None:
                     break
 
@@ -267,8 +275,17 @@ async def on_message(new_msg):
                     msg_nodes[response_msg.id] = MsgNode(parent_msg=new_msg)
                     await msg_nodes[response_msg.id].lock.acquire()
 
-    except Exception:
+    except Exception as e:
         logging.exception("Error while generating response")
+        # Print extra info if available (for OpenAI APIError)
+        logging.error(f"Exception repr: {repr(e)}")
+        logging.error(f"Exception args: {getattr(e, 'args', None)}")
+        if hasattr(e, "status_code"):
+            logging.error(f"APIError status: {getattr(e, 'status_code', None)}")
+        if hasattr(e, "body"):
+            logging.error(f"APIError body: {getattr(e, 'body', None)}")
+        if hasattr(e, "response"):
+            logging.error(f"APIError response: {getattr(e, 'response', None)}")
 
     for response_msg in response_msgs:
         msg_nodes[response_msg.id].text = "".join(response_contents)
